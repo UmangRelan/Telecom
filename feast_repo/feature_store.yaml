@@ -1,0 +1,16 @@
+project: telco_churn
+registry: data/registry.db
+provider: local
+online_store:
+  type: redis
+  connection_string: ${REDIS_CONNECTION_STRING:redis://localhost:6379/0}
+  
+offline_store:
+  type: postgres
+  host: ${POSTGRES_HOST:localhost}
+  port: ${PGPORT:5432}
+  database: ${PGDATABASE:postgres}
+  user: ${PGUSER:postgres}
+  password: ${PGPASSWORD:postgres}
+  
+entity_key_serialization_version: 2
