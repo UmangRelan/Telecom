@@ -1,0 +1,111 @@
+You are Replit’s AI assistant. Your goal is to scaffold and wire up a complete end-to-end Telco Churn data-engineering and ML pipeline that includes:
+
+1. **Repository Layout**  
+   - Create a Python 3.13 Repl named `telco-pipeline`.  
+   - Directory structure:  
+     ```
+     telco-pipeline/
+       ├── dags/                   # Apache Airflow DAGs
+       ├── etl/                    # PySpark jobs & benchmarking
+       ├── ge/                     # Great Expectations suites
+       ├── feast_repo/             # Feast feature store
+       ├── models/                 # training & inference (FastAPI)
+       ├── infra/                  # Terraform for infra
+       ├── ci/                     # GitHub Actions workflows
+       ├── docs/                   # Sphinx documentation
+       ├── dashboard/              # Streamlit or Dash app
+       ├── requirements.txt
+       ├── Dockerfile              # for model training & serving
+       ├── docker-compose.yml      # MinIO, Kafka, Postgres, Redis, Prometheus, Grafana
+       ├── run.sh                  # bootstraps everything locally
+       └── .replit                  # config to run run.sh on “Run”
+     ```
+
+2. **Dependencies**  
+   - In `requirements.txt`, pin:
+     ```
+     apache-airflow[postgres,aws]
+     pyspark
+     boto3
+     great_expectations
+     feast
+     fastapi uvicorn
+     pandas numpy
+     pydantic sqlalchemy
+     shap lime
+     streamlit
+     optuna
+     scikit-learn
+     ```
+
+3. **Infrastructure as Code**  
+   - In `infra/`, generate Terraform scripts to:
+     - Provision an S3 bucket (or MinIO), Kafka cluster, PostgreSQL (RDS), Redis, Prometheus & Grafana.
+     - Output connection strings & creds.
+
+4. **Docker & Docker-Compose**  
+   - `docker-compose.yml` services:
+     - MinIO (S3), Kafka + Zookeeper, Postgres, Redis, Prometheus, Grafana.
+   - `Dockerfile`:
+     - Build a container for training & serving (FastAPI + SHAP/LIME).
+
+5. **Automated Ingestion (Airflow)**  
+   - `dags/cdr_ingest.py`: daily DAG to pull CDRs from S3/MinIO, run PySpark ETL, validate with Great Expectations, write to silver parquet.
+   - Provide Airflow connection config for S3, Spark, Postgres.
+
+6. **Data Quality (Great Expectations)**  
+   - Scaffold a GE suite in `ge/` that:
+     - Checks null counts, schema conformance, value ranges.
+     - Alerts on distribution drift via Slack webhook.
+
+7. **Scalable ETL (PySpark)**  
+   - `etl/process_cdr.py`: reads raw CSV, cleans, partitions by date/customer_id, writes Parquet.
+   - `etl/benchmark.py`: script to generate synthetic data (10⁶–10⁷ rows) and measure execution time & resource usage.
+
+8. **Feature Store (Feast)**  
+   - `feast_repo/feature_repo.py`: define `customer_id` entity and features (daily_total_minutes, avg_call_duration, promo_response_rate).
+   - `feast_repo/feature_store.yaml`: configure Redis & Postgres offline store.
+   - Include a materialization script in `models/materialize_features.py`.
+
+9. **Model Training & Deployment**  
+   - `models/train.py`:  
+     - Load features from Feast, train Logistic Regression, Random Forest, XGBoost, and an Optuna-tuned model with k-fold CV.
+     - Serialize model artifact to `/models/artifact/`.
+   - `models/serve.py`:  
+     - FastAPI app loading the best model, exposing `/predict` endpoint.
+     - Integrate SHAP and LIME explainers, include `/explain` route.
+
+10. **CI/CD (GitHub Actions)**  
+    - In `ci/`, create `.github/workflows/ci.yml` that:
+      - Lints and tests Python code.
+      - Builds Docker image.
+      - Pushes image to Docker Hub or Git registry.
+      - On merge to main, triggers retrain & redeploy via `run.sh`.
+
+11. **Monitoring & Alerting**  
+    - Prometheus config in `docker-compose.yml` to scrape the FastAPI metrics.
+    - Grafana provisioning (dashboards JSON) showing prediction distribution, accuracy over time.
+    - Alertmanager or a simple Python script to send Slack/email when drift/accuracy drop thresholds are crossed.
+
+12. **Dashboard (Streamlit)**  
+    - `dashboard/app.py`:  
+      - Load model and SHAP values.
+      - Display feature importance, local explanations, and KPI charts from Parquet gold tables.
+
+13. **Documentation (Sphinx)**  
+    - In `docs/`, initialize Sphinx, auto-document the pipeline modules, provide architecture diagrams, data schema docs, and operator instructions (`make html`).
+
+14. **Run Script**  
+    - `run.sh` should:
+      1. `docker-compose up -d`
+      2. Initialize Airflow (`airflow db init`, create user, start webserver & scheduler).
+      3. Scaffold Great Expectations (`great_expectations init`).
+      4. Bootstrap Feast (`cd feast_repo && feast apply`).
+      5. Run initial DAG (`airflow dags trigger cdr_daily_ingest`).
+      6. Launch Streamlit (`streamlit run dashboard/app.py --server.port 8501 &`).
+      7. Print “🚀 Pipeline live: Airflow http://localhost:8080 | Streamlit http://localhost:8501”
+
+15. **Single-Click Run**  
+    - Configure `.replit` so that clicking **Run** executes `bash run.sh`.
+
+Paste this into Replit’s AI sidebar to generate all files, configurations, and scripts in one go. Once it finishes, click **Run** to stand up your full Telco Churn data-engineering and ML platform.
