@@ -11,48 +11,11 @@ import requests
 import pandas as pd
 import numpy as np
 import streamlit as st
+import plotly.express as px
+import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import io
 import base64
-
-# We'll add mock visualization components since plotly isn't available
-# This will allow the dashboard to run without the dependency
-class MockFigure:
-    def __init__(self):
-        pass
-    
-    def update_layout(self, **kwargs):
-        return self
-
-class MockExpress:
-    @staticmethod
-    def line(*args, **kwargs):
-        return MockFigure()
-    
-    @staticmethod
-    def bar(*args, **kwargs):
-        return MockFigure()
-    
-    @staticmethod
-    def pie(*args, **kwargs):
-        return MockFigure()
-
-class MockGraphObjects:
-    @staticmethod
-    def Figure(*args, **kwargs):
-        return MockFigure()
-    
-    class Indicator:
-        def __init__(self, **kwargs):
-            pass
-    
-    class Waterfall:
-        def __init__(self, **kwargs):
-            pass
-
-# Create mock objects to replace the missing libraries
-px = MockExpress()
-go = MockGraphObjects()
 
 # Constants
 API_URL = os.environ.get("API_URL", "http://localhost:8000")
