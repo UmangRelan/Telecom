@@ -44,21 +44,38 @@ def load_model_info():
 
 @st.cache_data(ttl=3600)
 def load_feature_importance():
-    """Load feature importance data from the model artifacts."""
+    """Load feature importance data from the cellphone dataset using correlation with churn."""
     try:
+        # First try loading from model artifacts
         importance_path = os.path.join(MODEL_DIR, "feature_importance.csv")
         if os.path.exists(importance_path):
             return pd.read_csv(importance_path)
-        else:
-            # Fallback: Get from model info
-            model_info = load_model_info()
-            if model_info and model_info.get("feature_importance"):
-                importance_df = pd.DataFrame({
-                    "feature": list(model_info["feature_importance"].keys()),
-                    "importance": list(model_info["feature_importance"].values())
-                })
-                return importance_df.sort_values("importance", ascending=False)
+        
+        # Get feature importance from model API
+        model_info = load_model_info()
+        if model_info and model_info.get("feature_importance"):
+            importance_df = pd.DataFrame({
+                "feature": list(model_info["feature_importance"].keys()),
+                "importance": list(model_info["feature_importance"].values())
+            })
+            return importance_df.sort_values("importance", ascending=False)
+        
+        # If that fails, compute feature importance from correlation with churn
+        df = load_cellphone_data()
+        if df.empty:
             return None
+        
+        # Calculate correlation with churn
+        correlations = df.corr()['Churn'].drop('Churn')
+        
+        # Convert to DataFrame for visualization
+        importance_df = pd.DataFrame({
+            'feature': correlations.index,
+            'importance': correlations.values
+        }).sort_values('importance', ascending=False)
+        
+        return importance_df
+    
     except Exception as e:
         st.error(f"Failed to load feature importance: {str(e)}")
         return None
@@ -92,20 +109,47 @@ def load_metrics_history():
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
-def load_churn_statistics():
-    """Load aggregated churn statistics from processed data."""
+def load_cellphone_data():
+    """Load the cellphone dataset for churn analysis."""
     try:
-        # In a real scenario, this would load from the data lake or a database
-        # For now, we'll create some sample statistics
+        # Load actual telco customer data
+        df = pd.read_csv('data/cellphone.csv')
+        return df
+    except Exception as e:
+        st.error(f"Failed to load cellphone data: {str(e)}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=3600)
+def load_churn_statistics():
+    """Load aggregated churn statistics from cellphone data."""
+    try:
+        # Load the cellphone data
+        df = load_cellphone_data()
+        
+        if df.empty:
+            return pd.DataFrame()
+        
+        # Aggregate data - we'll create a time series by sampling to simulate dates
+        # This would come from actual timestamps in real telco data
         dates = pd.date_range(start=datetime.now() - timedelta(days=90), end=datetime.now(), freq='D')
         
+        # Calculate overall churn rate
+        churn_rate = df['Churn'].mean()
+        
+        # Create daily variations of the churn rate for visualization
         stats = []
-        for date in dates:
+        total_customers = len(df)
+        
+        for i, date in enumerate(dates):
+            # Small daily variation around the actual churn rate
+            daily_rate = max(0.001, min(0.999, churn_rate + np.random.uniform(-0.002, 0.002)))
+            churned = int(total_customers * daily_rate)
+            
             stats.append({
                 "date": date,
-                "total_customers": np.random.randint(9800, 10200),
-                "churned_customers": np.random.randint(50, 150),
-                "churn_rate": np.random.uniform(0.005, 0.015)
+                "total_customers": total_customers,
+                "churned_customers": churned,
+                "churn_rate": daily_rate
             })
         
         return pd.DataFrame(stats)
@@ -170,7 +214,7 @@ def create_waterfall_chart(feature_importance):
 st.sidebar.title("Navigation")
 page = st.sidebar.radio(
     "Select a page",
-    ["Dashboard Overview", "Customer Analysis", "Model Performance", "Explainable AI"]
+    ["Dashboard Overview", "Data Exploration", "Customer Analysis", "Model Performance", "Explainable AI"]
 )
 
 # Dashboard Overview page
@@ -180,6 +224,9 @@ if page == "Dashboard Overview":
     # Load model info and display metrics
     model_info = load_model_info()
     
+    # Load cellphone data
+    df = load_cellphone_data()
+    
     # Key metrics
     col1, col2, col3, col4 = st.columns(4)
     
@@ -187,41 +234,40 @@ if page == "Dashboard Overview":
     latest_stats = churn_stats.iloc[-1]
     
     with col1:
+        # Use actual churn rate from data
+        actual_churn_rate = df['Churn'].mean()
         st.metric(
             label="Churn Rate",
-            value=f"{latest_stats['churn_rate']:.2%}",
+            value=f"{actual_churn_rate:.2%}",
             delta=f"{latest_stats['churn_rate'] - churn_stats.iloc[-2]['churn_rate']:.2%}"
         )
     
     with col2:
-        if model_info:
-            st.metric(
-                label="Model Accuracy",
-                value=f"{model_info['metrics']['accuracy']:.2%}",
-                delta=None
-            )
-        else:
-            st.metric(label="Model Accuracy", value="N/A", delta=None)
+        # Total customers
+        st.metric(
+            label="Total Customers",
+            value=f"{len(df):,}",
+            delta=None
+        )
     
     with col3:
-        if model_info:
-            st.metric(
-                label="Model F1 Score",
-                value=f"{model_info['metrics']['f1']:.2f}",
-                delta=None
-            )
-        else:
-            st.metric(label="Model F1 Score", value="N/A", delta=None)
+        # Customers with data plan
+        data_plan_count = df[df['DataPlan'] == 1].shape[0]
+        data_plan_pct = data_plan_count / len(df) * 100
+        st.metric(
+            label="Data Plan Adoption",
+            value=f"{data_plan_pct:.1f}%",
+            delta=None
+        )
     
     with col4:
-        if model_info:
-            st.metric(
-                label="Model Type",
-                value=model_info['model_type'],
-                delta=None
-            )
-        else:
-            st.metric(label="Model Type", value="N/A", delta=None)
+        # Average Monthly Charge
+        avg_monthly = df['MonthlyCharge'].mean()
+        st.metric(
+            label="Avg. Monthly Charge",
+            value=f"${avg_monthly:.2f}",
+            delta=None
+        )
     
     # Churn rate trend
     st.subheader("Churn Rate Trend")
@@ -235,22 +281,24 @@ if page == "Dashboard Overview":
     fig.update_layout(yaxis_tickformat='.2%')
     st.plotly_chart(fig, use_container_width=True)
     
-    # Feature importance
-    st.subheader("Feature Importance")
-    importance_df = load_feature_importance()
-    if importance_df is not None:
-        top_features = importance_df.head(10)
-        fig = px.bar(
-            top_features,
-            x='importance',
-            y='feature',
-            orientation='h',
-            title="Top Features for Churn Prediction",
-            labels={"importance": "Importance", "feature": "Feature"},
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Feature importance data not available.")
+    # Feature analysis
+    st.subheader("Feature Analysis")
+    
+    # Create a box plot comparing churned vs non-churned customer metrics
+    metric_options = ['MonthlyCharge', 'AccountWeeks', 'CustServCalls', 'DayMins', 'DataUsage']
+    selected_metric = st.selectbox("Select Metric to Compare", metric_options)
+    
+    fig = px.box(
+        df, 
+        x='Churn', 
+        y=selected_metric,
+        color='Churn',
+        title=f"{selected_metric} by Churn Status",
+        labels={"Churn": "Churned", selected_metric: selected_metric},
+        category_orders={"Churn": [0, 1]},
+        color_discrete_map={0: 'blue', 1: 'red'}
+    )
+    st.plotly_chart(fig, use_container_width=True)
     
     # About this dashboard
     with st.expander("About this Dashboard"):
@@ -258,6 +306,7 @@ if page == "Dashboard Overview":
         This dashboard provides insights into customer churn for a telecommunications company. It includes:
         
         - **Churn Rate Monitoring**: Track the churn rate over time
+        - **Data Exploration**: Explore the telco customer dataset
         - **Customer Analysis**: Analyze individual customer churn risk
         - **Model Performance**: Monitor the performance of the churn prediction model
         - **Explainable AI**: Understand why customers are predicted to churn
@@ -270,6 +319,135 @@ if page == "Dashboard Overview":
         - Model training with scikit-learn and XGBoost
         - Model serving with FastAPI
         """)
+
+# Data Exploration page
+elif page == "Data Exploration":
+    st.title("Telco Data Exploration")
+    
+    # Load the cellphone dataset
+    df = load_cellphone_data()
+    
+    if not df.empty:
+        # Display basic dataset information
+        st.subheader("Dataset Overview")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write(f"**Number of Records:** {len(df):,}")
+            st.write(f"**Number of Features:** {df.shape[1]:,}")
+            st.write(f"**Churn Rate:** {df['Churn'].mean():.2%}")
+        
+        with col2:
+            # Count of data plan subscribers
+            data_plan_count = df[df['DataPlan'] == 1].shape[0]
+            st.write(f"**Customers with Data Plan:** {data_plan_count:,} ({data_plan_count / len(df):.2%})")
+            
+            # Contract renewal rate
+            renewal_rate = df['ContractRenewal'].mean()
+            st.write(f"**Contract Renewal Rate:** {renewal_rate:.2%}")
+            
+            # Average customer tenure
+            avg_tenure = df['AccountWeeks'].mean()
+            st.write(f"**Average Tenure:** {avg_tenure:.1f} weeks")
+        
+        # Data sample
+        with st.expander("View Data Sample"):
+            st.dataframe(df.head(10))
+        
+        # Feature distributions
+        st.subheader("Feature Distributions")
+        
+        # Select feature for histogram
+        hist_feature = st.selectbox(
+            "Select feature for histogram",
+            ['MonthlyCharge', 'DayMins', 'CustServCalls', 'AccountWeeks', 'DataUsage', 'OverageFee']
+        )
+        
+        # Create histogram with color by churn
+        fig = px.histogram(
+            df,
+            x=hist_feature,
+            color='Churn',
+            marginal='box',
+            title=f"Distribution of {hist_feature} by Churn Status",
+            labels={hist_feature: hist_feature, 'Churn': 'Churned'},
+            color_discrete_map={0: 'blue', 1: 'red'},
+            barmode='overlay',
+            opacity=0.7
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Correlation matrix
+        st.subheader("Feature Correlations")
+        corr = df.corr()
+        
+        # Create heatmap
+        fig = px.imshow(
+            corr,
+            text_auto=True,
+            aspect="auto",
+            color_continuous_scale='RdBu_r',
+            title="Feature Correlation Matrix"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Churn risk factors
+        st.subheader("Churn Risk Factors")
+        
+        # Calculate mean values for each feature by churn status
+        churn_means = df.groupby('Churn').mean().reset_index()
+        
+        # Find top differentiating factors
+        non_churn = churn_means[churn_means['Churn'] == 0].iloc[0]
+        churned = churn_means[churn_means['Churn'] == 1].iloc[0]
+        
+        # Calculate percent differences
+        diffs = {}
+        for col in df.columns:
+            if col != 'Churn' and non_churn[col] > 0:
+                diffs[col] = (churned[col] - non_churn[col]) / non_churn[col] * 100
+        
+        # Convert to dataframe for visualization
+        diff_df = pd.DataFrame({
+            'Feature': list(diffs.keys()),
+            'Percent_Difference': list(diffs.values())
+        }).sort_values('Percent_Difference', ascending=False)
+        
+        # Create bar chart
+        fig = px.bar(
+            diff_df,
+            y='Feature',
+            x='Percent_Difference',
+            orientation='h',
+            title="Percent Difference in Features between Churned and Non-churned Customers",
+            labels={'Percent_Difference': 'Percent Difference (%)', 'Feature': 'Feature'},
+            color='Percent_Difference',
+            color_continuous_scale='RdBu_r'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Key insights
+        st.subheader("Key Insights")
+        
+        # Customer service calls
+        avg_cust_serv_calls = df.groupby('Churn')['CustServCalls'].mean()
+        st.write(f"Customers who churned made an average of {avg_cust_serv_calls[1]:.2f} customer service calls, compared to {avg_cust_serv_calls[0]:.2f} for customers who didn't churn.")
+        
+        # Data plan impact
+        data_plan_churn = df[df['DataPlan'] == 1]['Churn'].mean()
+        no_data_plan_churn = df[df['DataPlan'] == 0]['Churn'].mean()
+        st.write(f"Customers with a data plan had a churn rate of {data_plan_churn:.2%}, compared to {no_data_plan_churn:.2%} for customers without a data plan.")
+        
+        # Account tenure impact
+        new_customers = df[df['AccountWeeks'] <= 52]
+        old_customers = df[df['AccountWeeks'] > 52]
+        new_churn_rate = new_customers['Churn'].mean()
+        old_churn_rate = old_customers['Churn'].mean()
+        st.write(f"New customers (≤ 1 year) had a churn rate of {new_churn_rate:.2%}, compared to {old_churn_rate:.2%} for longer-term customers.")
+        
+    else:
+        st.error("Failed to load the cellphone dataset. Please check the file path and try again.")
 
 # Customer Analysis page
 elif page == "Customer Analysis":
@@ -357,13 +535,30 @@ elif page == "Customer Analysis":
     # Churn risk segmentation
     st.subheader("Customer Segmentation by Churn Risk")
     
-    # In a real scenario, this would be loaded from a database
-    # For now, we'll create a sample segmentation
-    segment_data = pd.DataFrame({
-        "Segment": ["Low Risk", "Medium Risk", "High Risk"],
-        "Count": [6500, 2500, 1000],
-        "Percentage": [65, 25, 10]
-    })
+    # Load cellphone data
+    df = load_cellphone_data()
+    
+    # Segment customers based on real data features
+    df['Risk'] = 'Medium Risk'  # Default risk level
+    
+    # High risk: High CustServCalls or high DayMins with no DataPlan
+    df.loc[(df['CustServCalls'] >= 4) | 
+           ((df['DayMins'] > 250) & (df['DataPlan'] == 0)), 'Risk'] = 'High Risk'
+    
+    # Low risk: Long-term customers with low CustServCalls and with DataPlan
+    df.loc[(df['AccountWeeks'] > 100) & 
+           (df['CustServCalls'] <= 1) & 
+           (df['DataPlan'] == 1), 'Risk'] = 'Low Risk'
+    
+    # Calculate counts and percentages
+    risk_counts = df['Risk'].value_counts().reset_index()
+    risk_counts.columns = ['Segment', 'Count']
+    risk_counts['Percentage'] = (risk_counts['Count'] / risk_counts['Count'].sum()) * 100
+    
+    # Sort by risk level
+    risk_order = {'Low Risk': 0, 'Medium Risk': 1, 'High Risk': 2}
+    risk_counts['RiskOrder'] = risk_counts['Segment'].map(risk_order)
+    segment_data = risk_counts.sort_values('RiskOrder').drop('RiskOrder', axis=1)
     
     col1, col2 = st.columns(2)
     
